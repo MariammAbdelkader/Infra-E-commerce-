@@ -276,7 +276,6 @@ resource "aws_s3_bucket" "frontend_bucket" {
 }
 
 
-
 # Set Public Access Block 
 resource "aws_s3_bucket_public_access_block" "frontend_public_access" {
   bucket = aws_s3_bucket.frontend_bucket.id
@@ -286,4 +285,36 @@ resource "aws_s3_bucket_public_access_block" "frontend_public_access" {
   ignore_public_acls      = false
   restrict_public_buckets = false
 }
+
+
+# -------------------------------
+# Application Load Balancer (ALB)
+# -------------------------------
+resource "aws_lb" "app_alb" {
+  name               = "ecommerce-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.app_sg.id]
+  subnets           = [aws_subnet.load_balancer_subnet.id, aws_subnet.frontend_subnet.id]
+  enable_deletion_protection = false
+  tags = {
+    Name = "ecommerce-alb"
+  }
+}
+
+
+# -------------------------------
+# ALB Listener
+# -------------------------------
+resource "aws_lb_listener" "http_listener" {
+  load_balancer_arn = aws_lb.app_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend_tg.arn
+  }
+}
+
 

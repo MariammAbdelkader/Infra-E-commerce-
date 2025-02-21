@@ -266,3 +266,24 @@ resource "aws_db_instance" "postgres_db" {
 }
 
 # Create S3 Bucket for Frontend Hosting
+resource "aws_s3_bucket" "frontend_bucket" {
+  bucket = "ecommerce-frontend-bucket"
+  
+  tags = {
+    Name = "ecommerce-frontend"
+    Environment = "Production"
+  }
+}
+
+
+
+# Set Public Access Block 
+resource "aws_s3_bucket_public_access_block" "frontend_public_access" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+

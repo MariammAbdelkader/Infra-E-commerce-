@@ -240,3 +240,29 @@ resource "aws_db_subnet_group" "database_subnet_group" {
 # -------------------------------
 # PostgreSQL RDS Instance
 # -------------------------------
+resource "aws_db_instance" "postgres_db" {
+  identifier           = "ecommerce-postgres-db"
+  engine              = "postgres"
+  engine_version      = "15.4"
+  instance_class      = "db.t3.micro"
+  allocated_storage   = 20
+  storage_type        = "gp3"
+
+  db_name             = "ecommerce_db"
+  username           = "admin"
+  password           =  "GPasu2025"  
+  parameter_group_name = "default.postgres15"
+  
+  db_subnet_group_name  = aws_db_subnet_group.database_subnet_group.name
+  vpc_security_group_ids = [aws_security_group.database_sg.id]
+
+  multi_az             = false
+  publicly_accessible  = false
+  skip_final_snapshot  = true
+
+  tags = {
+    Name = "ecommerce-postgres-db"
+  }
+}
+
+# Create S3 Bucket for Frontend Hosting

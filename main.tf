@@ -181,28 +181,105 @@ resource "aws_route_table_association" "backend" {
 # -------------------------------
 # Security Groups
 # -------------------------------
-resource "aws_security_group" "app_sg" {
+
+# Frontend Security Group (Allows HTTP/HTTPS)
+resource "aws_security_group" "frontend_sg" {
   vpc_id = aws_vpc.main.id
 
   ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] # Allow HTTP access from anywhere
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Allow HTTPS access from anywhere
+  }
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Allow SSH access from any where "insecure"
   }
 
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] # Allow all outbound traffic
   }
 
   tags = {
-    Name = "app-sg"
+    Name = "frontend-sg"
   }
 }
 
+# Load Balancer Security Group (Handles External Traffic)
+resource "aws_security_group" "lb_sg" {
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Allow HTTP from anywhere
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Allow HTTPS from anywhere
+  }
+
+  egress {
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.backend_sg.id] # Allow traffic to backend
+  }
+
+  tags = {
+    Name = "load-balancer-sg"
+  }
+}
+
+# Backend Security Group (Handles API Requests)
+resource "aws_security_group" "backend_sg" {
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lb_sg.id] # Only allow traffic from Load Balancer
+  }
+
+  egress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.database_sg.id] # Allow outbound traffic to database
+  }
+
+  egress {
+    from_port       = 5000
+    to_port         = 5000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ai_sg.id] # Allow outbound traffic to AI services
+  }
+
+  tags = {
+    Name = "backend-sg"
+  }
+}
+
+# Database Security Group (Only Accessible by Backend)
 resource "aws_security_group" "database_sg" {
   vpc_id = aws_vpc.main.id
 
@@ -210,18 +287,41 @@ resource "aws_security_group" "database_sg" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_security_group.app_sg.id]
+    security_groups = [aws_security_group.backend_sg.id] # Allow only backend servers to access DB
   }
 
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] # Allow outbound traffic 
   }
 
   tags = {
     Name = "database-sg"
+  }
+}
+#determine how to handle AI services
+# AI Services Security Group (For AI-Related Processing)
+resource "aws_security_group" "ai_sg" {
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port       = 5000
+    to_port         = 5000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.backend_sg.id] # Allow backend to communicate with AI services
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"] # Allow outbound traffic if needed
+  }
+
+  tags = {
+    Name = "ai-services-sg"
   }
 }
 
@@ -275,7 +375,6 @@ resource "aws_s3_bucket" "frontend_bucket" {
   }
 }
 
-
 # Set Public Access Block 
 resource "aws_s3_bucket_public_access_block" "frontend_public_access" {
   bucket = aws_s3_bucket.frontend_bucket.id
@@ -285,7 +384,6 @@ resource "aws_s3_bucket_public_access_block" "frontend_public_access" {
   ignore_public_acls      = false
   restrict_public_buckets = false
 }
-
 
 # -------------------------------
 # Application Load Balancer (ALB)
@@ -302,7 +400,6 @@ resource "aws_lb" "app_alb" {
   }
 }
 
-
 # -------------------------------
 # ALB Listener
 # -------------------------------
@@ -316,5 +413,3 @@ resource "aws_lb_listener" "http_listener" {
     target_group_arn = aws_lb_target_group.backend_tg.arn
   }
 }
-
-

@@ -53,7 +53,23 @@ resource "aws_subnet" "ai_services_subnet" {
     Name = "ai-services-subnet"
   }
 }
+resource "aws_subnet" "database_subnet" {
+  vpc_id            = aws_vpc.main.id 
+  cidr_block        = "10.0.5.0/24"
+  availability_zone = "us-east-1b"
 
+  tags = {
+    Name = "database-subnet"
+  }
+}
+resource "aws_db_subnet_group" "database_subnet_group" {
+  name       = "ecommerce-db-subnet-group"
+  subnet_ids = [aws_subnet.database_subnet.id, aws_subnet.backend_subnet.id]  # Always use at least 2 subnets in different AZs
+  
+  tags = {
+    Name = "ecommerce-db-subnet-group"
+  }
+}
 resource "aws_subnet" "backend_subnet" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.6.0/24"
@@ -103,6 +119,10 @@ resource "aws_route_table_association" "nat_gateway" {
   route_table_id = aws_route_table.public.id
 }
 
+resource "aws_route_table_association" "database" {
+  subnet_id      = aws_subnet.database_subnet.id
+  route_table_id = aws_route_table.private.id
+} 
 # NAT Gateway for Private Subnets
 resource "aws_eip" "nat" {
   domain = "vpc"
@@ -244,12 +264,39 @@ resource "aws_security_group" "backend_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"] # Allow all outbound traffic (for container to pull images, etc.)
   }
+  egress {
+  from_port       = 5432
+  to_port         = 5432
+  protocol        = "tcp"
+  security_groups = [aws_security_group.database_sg.id]
+}
 
   tags = {
     Name = "backend-sg"
   }
 }
+// Database security group
+resource "aws_security_group" "database_sg" {
+  vpc_id = aws_vpc.main.id
 
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.backend_sg.id] # Allow only backend to connect
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"] # Allow all outbound traffic for updates, etc.
+  }
+
+  tags = {
+    Name = "database-sg"
+  }
+}
 # AI Services Security Group (For AI-Related Processing)
 resource "aws_security_group" "ai_sg" {
   vpc_id = aws_vpc.main.id
@@ -295,7 +342,33 @@ resource "aws_security_group" "nat_sg" {
     Name = "nat-gateway-sg"
   }
 }
+# -------------------------------
+# PostgreSQL RDS Instance
+# -------------------------------
+resource "aws_db_instance" "postgres_db" {
+  identifier           = "ecommerce-postgres-db"
+  engine              = "postgres"
+  engine_version      = "15.4"
+  instance_class      = "db.t3.micro"
+  allocated_storage   = 20
+  storage_type        = "gp3"
 
+  db_name             = "ecommerce_db"
+  username           = "admin"
+  password           =  "GPasu2025"  
+  parameter_group_name = "default.postgres15"
+  
+  db_subnet_group_name  = aws_db_subnet_group.database_subnet_group.name
+  vpc_security_group_ids = [aws_security_group.database_sg.id]
+
+  multi_az             = false
+  publicly_accessible  = false
+  skip_final_snapshot  = true
+
+  tags = {
+    Name = "ecommerce-postgres-db"
+  }
+}
 # Create S3 Bucket for Frontend Hosting
 resource "aws_s3_bucket" "frontend_bucket" {
   bucket = "ecommerce-frontend-bucket"
@@ -568,5 +641,3 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
     AutoScalingGroupName = aws_autoscaling_group.backend_asg.name
   }
 }
-
-
